@@ -1,4 +1,6 @@
 from schemas import AgentEvent
+from hardware_profile import HardwareProfile
+
 import time
 import json
 from pathlib import Path
@@ -10,5 +12,9 @@ class Observer:
         self.output_file.parent.mkdir(exist_ok=True, parents=True)
 
     def write_event(self, event: AgentEvent):
-        with open(self.output_file, 'a') as file:
+        with open(self.output_file, 'a+') as file:
             file.write(json.dumps(dataclasses.asdict(event), indent=2))
+
+    def write_hardware_profile(self, hp: HardwareProfile):
+        with open(self.output_file, 'a+') as file:
+            file.write(json.dumps(hp, indent=2))

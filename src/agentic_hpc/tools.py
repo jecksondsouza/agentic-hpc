@@ -1,67 +1,43 @@
-import platform
 import subprocess
 
-from dataclasses import dataclass
-from typing import Callable, Type
-from pydantic import BaseModel
+from schemas import RawExperimentResult, RunExperimentArgs, Tool
 
 
-@dataclass
-class Tool:
-    name: str
-    function: Callable
-    args_schema: Type[BaseModel] | None = None
-
-class RunCommandArgs(BaseModel):
-    command: str
-
-tools = [
+tools_list = [
     {
         "type": "function",
         "function": {
-            "name": "get_system_info",
-            "description": "Return information about the current compute system.",
-            "parameters": {
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_command",
-            "description": "Run an approved diagnostic system command.",
+            "name": "run_experiment",
+            "description": "Run the benchmark (path and docker image fixed by the agent) along with several environment execution parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "An approved diagnostic command."
-                    }
+                    "cpus": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "List of cpus that should be used to run the benchmark."
+                    },
+                    "num_threads": {
+                        "type": "integer",
+                        "description": "The number of threads the benchmark should spawn"
+                    },
+                    # We can explore other properties in the future, such as OMP_SCHEDULE, numa policy, disabling HT...
                 },
-                "required": ["command"],
+                "required": [],
             },
         },
     }
 ]
 
-def get_system_info():
-    return {
-        "os": platform.system(),
-        "architecture": platform.machine(),
-        "processor": platform.processor(),
-    }
 
-def run_command(command: str):
 
-    allowed = {
-        "uname -a",
-        "nproc",
-        "free -h",
-        "lscpu",
-    }
+def run_experiment(benchmark_path: str, docker_image: str, cpus: list[int] = [], num_threads: int = 0) -> RawExperimentResult:
 
-    if command not in allowed:
-        raise ValueError(f"Command not allowed. Allowed commands are {', '.join(allowed)}")
+    cpu_list = f"--cpuset-cpus='{','.join(map(str,cpus))}' " if cpus else ""
+    omp_threads = f"-e OMP_NUM_THREADS={num_threads} " if num_threads > 0 else ""
+
+    command = f"docker run -it --rm  --privileged \
+        {cpu_list}{omp_threads}{docker_image} bash -c 'TIMEFORMAT=%3R && time ./{benchmark_path}'"
 
     result = subprocess.run(
         command,
@@ -71,21 +47,27 @@ def run_command(command: str):
         timeout=10,
     )
 
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "return_code": result.returncode,
-    }
+    elapsed_seconds = next(
+        float(line)
+        for line in reversed(result.stdout.strip().splitlines())
+        if line.strip().replace(".", "", 1).isdigit()
+    )
+
+    structured_result = RawExperimentResult(
+        output=result.stdout, 
+        error=result.stderr, 
+        errorcode=result.returncode,
+        args = (cpus, num_threads),
+        execution_time_s=elapsed_seconds
+        )
+
+    return structured_result
+
 
 tools_registry = {
-    "get_system_info": Tool(
-        name="get_system_info",
-        function=get_system_info,
-    ),
-
-    "run_command": Tool(
-        name="run_command",
-        function=run_command,
-        args_schema=RunCommandArgs,
+    "run_experiment": Tool(
+        name="run_experiment",
+        function=run_experiment,
+        args_schema=RunExperimentArgs,
     ),
 }

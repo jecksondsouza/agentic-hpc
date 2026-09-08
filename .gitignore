@@ -219,3 +219,6 @@ __marimo__/
 
 # Logs and traces
 traces/
+
+#Docker
+docker/

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pydantic import BaseModel
 
 @dataclass
 class AgentState():
@@ -17,4 +18,24 @@ class AgentEvent():
     errors: int
     tool: str | None = None
     arguments: str | None = None
+    current_best_run: RawExperimentResult | None = None
 
+@dataclass
+class Tool:
+    name: str
+    function: Callable
+    args_schema: Type[BaseModel] | None = None
+
+class RunExperimentArgs(BaseModel):
+    cpus: list[int] = field(default_factory=list)
+    num_threads: int | None = 0
+
+@dataclass
+class RawExperimentResult():
+    output: str
+    error: str
+    errorcode: str
+    
+    args: RunExperimentArgs
+    execution_time_s: float # In seconds with ms precision
+    
