@@ -149,3 +149,19 @@ You can see examples of final reports generated based on a trace in the [doc/](d
 |Host|Linux 7.2.3-1-cachyos|
 |Docker Image|ubuntu:26.04|
 |LLM|unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL - xhigh reasoning - running locally|
+|Applications|Class B EP and CG benchmarks from [NAS Parallel benchmarks](https://www.nas.nasa.gov/software/npb.html)|
+
+#### A note on the results
+
+The NAS Parallel benchmarks are well known applications with several published articles explaining their characteristics and profiles. There is a high probability that any LLM model can identify those benchmarks and therefore easily figure out the best configuration to run them. In fact, this can be seen in the reports as part of the reasoning of the agent. 
+
+Examples:
+```
+EP is compute-bound and embarrassingly parallel (integer RNG generation + floating-point Gaussian pair computation). It should scale near-linearly across the 8 physical cores.
+```
+
+```
+CG is memory-bandwidth-bound (spmv), so it should scale well across cores, but SMT siblings would add cache/bandwidth contention.
+```
+
+This does not exclude the necessity of reasoning from the agent itself, as it needs to understand the constrains of the application and adapt to the current running platform. A completely unknown application might take more iterations to find the best configuration, and extra hardware counters (CPU usage, cache misses, etc) might become essential for correct reasoning.
