@@ -29,7 +29,7 @@ class Agent:
 
         self.observer.write_hardware_profile(self.hardware_profile)
 
-        baseline_result = run_experiment(self.benchmark_path, self.docker_image)
+        baseline_result = run_experiment(self.benchmark_path, self.docker_image, [0], 1)
 
         best_run = baseline_result
 
@@ -40,10 +40,12 @@ class Agent:
                 "content": (
                     "You are an expert HPC researcher and systems engineer. "
                     "Your goal is to find the combination of parameter that give the best performance for the running benchmark."
-                    "To do that, you will use reasoning based on the platform information you are currently running in."
+                    "To do that, you will use reasoning based on the platform information you are currently running in. You will not try to run experiments on incompatible hardware."
+                    f"The hardware profile of the platform you are running in is given in the json bellow: \n {json.dumps(self.hardware_profile)}"
                     "Be concise and technically precise."
+                    "Always provide your reasoning at each response."
                     "Use tools when necessary."
-                    "Never repeat an experiment with same arguments that you have already run before, even if the arguments caused an error in the tool execution." #This is not working. Will have to reject it deterministically
+                    "Never repeat an experiment with same arguments that you have already run before, even if the arguments caused an error in the tool execution."
                     "Keep running new experiments until you are told that you must stop and conclude your thoughts."                                        
                 ),
             },
@@ -59,6 +61,7 @@ class Agent:
                         "content": (
                             "You have reached the maximum number of tries for this run and you must stop now. Conclude your thoughts now and do not call any more tools"
                             "Your thoughts should be output in a markdown format and they should explain the reasoning behind the chosen best experiment."
+                            "Add all previous reasoning steps you have used for each experiment you run, showing step by step how you reached the final conclusion."
                             f"the current best run is: \n {json.dumps(dataclasses.asdict(best_run))}"
                         )
                     }
@@ -68,7 +71,8 @@ class Agent:
                     {
                         "role": "user",
                         "content": (
-                            "You are not done yet, keep trying new experiments."
+                            f"You can still try to run more experiments. You still have {MAX_ITERATIONS-self.state.iteration} iterations and {MAX_TOOL_CALLS-self.state.tool_calls} tool calls."
+                            "However, if you are certain you have reached the final solution, you can stop now by not calling any tools."
                             f"the current best run is: \n {json.dumps(dataclasses.asdict(best_run))}"
                         )
                     }
@@ -76,7 +80,7 @@ class Agent:
             self.state.iteration += 1
 
             response = self.client.chat.completions.create(
-                model="empero-ai/Qwen3.5-9B-Claude-Code-GGUF:Q8_0",
+                model="my_running_model",
                 messages=self.state.messages,
                 tools=tools_list,
             )

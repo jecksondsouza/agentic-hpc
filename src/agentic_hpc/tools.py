@@ -44,7 +44,6 @@ def run_experiment(benchmark_path: str, docker_image: str, cpus: list[int] = [],
         shell=True,
         capture_output=True,
         text=True,
-        timeout=10,
     )
 
     elapsed_seconds = next(
