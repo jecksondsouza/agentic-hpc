@@ -15,7 +15,9 @@ tools_list = [
                     "cpus": {
                         "type": "array",
                         "items": {"type": "integer"},
-                        "description": "List of cpus that should be used to run the benchmark."
+                        "description": "List of cpus that should be used to run the benchmark. "
+                                       "A subset of cpus can be send by sending a subset list of the cpu range." 
+                                       "For instance, sending [0,1,2,3] will use only cpus 0, 1, 2 and 3 to run the experiment."
                     },
                     "num_threads": {
                         "type": "integer",

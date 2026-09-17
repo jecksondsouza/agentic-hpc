@@ -91,7 +91,7 @@ class Agent:
                 timestamp = time.time_ns(),
                 iteration=self.state.iteration,
                 event="LLM response",
-                message=message.content,
+                message=f"message: '{message.content}', reasoning: '{message.reasoning_content}'",
                 tool_calls=self.state.tool_calls,
                 errors=self.state.errors,
             ))
