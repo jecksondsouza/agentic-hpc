@@ -6,27 +6,26 @@ from schemas import RawExperimentResult, RunExperimentArgs, Tool
 tools_list = [
     {
         "type": "function",
-        "function": {
-            "name": "run_experiment",
-            "description": "Run the benchmark (path and docker image fixed by the agent) along with several environment execution parameters.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "cpus": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "List of cpus that should be used to run the benchmark. "
-                                       "A subset of cpus can be send by sending a subset list of the cpu range." 
-                                       "For instance, sending [0,1,2,3] will use only cpus 0, 1, 2 and 3 to run the experiment."
-                    },
-                    "num_threads": {
-                        "type": "integer",
-                        "description": "The number of threads the benchmark should spawn"
-                    },
-                    # We can explore other properties in the future, such as OMP_SCHEDULE, numa policy, disabling HT...
+        "name": "run_experiment",
+        "description": "Run the benchmark (path and docker image fixed by the agent) along with several environment execution parameters.",
+        "strict": "true",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cpus": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "List of cpus that should be used to run the benchmark. "
+                                    "A subset of cpus can be send by sending a subset list of the cpu range." 
+                                    "For instance, sending [0,1,2,3] will use only cpus 0, 1, 2 and 3 to run the experiment."
                 },
-                "required": [],
+                "num_threads": {
+                    "type": "integer",
+                    "description": "The number of threads the benchmark should spawn"
+                },
+                # We can explore other properties in the future, such as OMP_SCHEDULE, numa policy, disabling HT...
             },
+            "required": [],
         },
     }
 ]

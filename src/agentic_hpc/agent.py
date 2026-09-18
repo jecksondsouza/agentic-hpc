@@ -33,12 +33,7 @@ class Agent:
 
         best_run = baseline_result
 
-        self.state.messages = [
-            {
-                # System prompt
-                "role": "developer",
-                "content": (
-                    "You are an expert HPC researcher and systems engineer. "
+        system_prompt = ("You are an expert HPC researcher and systems engineer. "
                     "Your goal is to find the combination of parameter that give the best performance for the running benchmark."
                     "To do that, you will use reasoning based on the platform information you are currently running in. You will not try to run experiments on incompatible hardware."
                     f"The hardware profile of the platform you are running in is given in the json bellow: \n {json.dumps(self.hardware_profile)}"
@@ -46,11 +41,17 @@ class Agent:
                     "Always provide your reasoning at each response."
                     "Use tools when necessary."
                     "Never repeat an experiment with same arguments that you have already run before, even if the arguments caused an error in the tool execution."
-                    "Keep running new experiments until you are told that you must stop and conclude your thoughts."                                        
-                ),
-            },
-
-        ]
+                    "Keep running new experiments until you are told that you must stop and conclude your thoughts."                               
+                    )
+        
+        self.observer.write_event(AgentEvent(
+            timestamp = time.time_ns(),
+            iteration=self.state.iteration,
+            event="System Prompt",
+            message=system_prompt,
+            tool_calls=self.state.tool_calls,
+            errors=self.state.errors,
+        ))
 
         while True:
 
@@ -72,125 +73,140 @@ class Agent:
                         "role": "user",
                         "content": (
                             f"You can still try to run more experiments. You still have {MAX_ITERATIONS-self.state.iteration} iterations and {MAX_TOOL_CALLS-self.state.tool_calls} tool calls."
-                            "However, if you are certain you have reached the final solution, you can stop now by not calling any tools."
+                            ##### The line bellow is useful if you want the agent to decide to stop early. If a smart LLM is used, this can be useful to reduce the amount of tries and it could possibly lead to quickly finding the best solution for well known applications.
+                            # "However, if you are certain you have reached the final solution, you can stop now by not calling any tools."
+                            ##### The line bellow is useful if you want the agent to try something closer to a heuristic search. It might be necessary if running applications that the agent could not know about (e.g., not well-known benchmarks)
+                            # "Do not stop until you have tried to run a few experiments around the optimal solution (for instance, a few threads less or more, or pinning to different cores using the best thread count so far)"
+                            ##### The line bellow forces the agent to use all tries, but doesn't guide it towards the best solution, rather leaves it to decide on the strategy.
+                            "You must use all your tries in a best effort to reason the best solution."
                             f"the current best run is: \n {json.dumps(dataclasses.asdict(best_run))}"
                         )
                     }
                 )
             self.state.iteration += 1
 
-            response = self.client.chat.completions.create(
-                model="my_running_model",
-                messages=self.state.messages,
+            response = self.client.responses.create(
+                model="my_llm",
+                instructions=system_prompt,
+                input=self.state.messages,
                 tools=tools_list,
+                # Not adding previous response id to control context internally
             )
 
-            message = response.choices[0].message
+            message = response.output_text
 
             self.observer.write_event(AgentEvent(
                 timestamp = time.time_ns(),
                 iteration=self.state.iteration,
                 event="LLM response",
-                message=f"message: '{message.content}', reasoning: '{message.reasoning_content}'",
+                message=response.model_dump_json(),
                 tool_calls=self.state.tool_calls,
                 errors=self.state.errors,
             ))
 
-            # No tool call need anymore -> final answer reached
-            if not message.tool_calls:
-                self.observer.write_event(AgentEvent(
-                    timestamp = time.time_ns(),
-                    iteration=self.state.iteration,
-                    event="Final answer",
-                    message=message.content,
-                    tool_calls=self.state.tool_calls,
-                    errors=self.state.errors,
-                ))
-                return message.content
-
-            # Add the tool request message to the context
-            self.state.messages.append(message)
+            tool_called = False
 
             # Execute every requested tool
-            for tool_call in message.tool_calls:
-                
-                tool_name = tool_call.function.name
-                print (f"Calling tool {tool_name} with arguments {tool_call.function.arguments}")
+            for item in response.output:
+                if item.type == "function_call":
+                    tool_called = True
+                    tool_name = item.name
+                    print (f"Calling tool {tool_name} with arguments {item.arguments}")
 
-                try:
-                    arguments = json.loads(
-                        tool_call.function.arguments or "{}"
+                    # Add the tool request message to the context as a proper
+                    # function_call item (a raw JSON string is not a valid input item)
+                    self.state.messages.append({
+                        "type": "function_call",
+                        "call_id": item.call_id,
+                        "name": item.name,
+                        "arguments": item.arguments,
+                    })
+
+                    try:
+                        arguments = json.loads(
+                            item.arguments or "{}"
+                        )
+
+                        result = self._execute_tool(
+                            item.name,
+                            arguments,
+                        )
+                        # Deliberately considers a tool call only if the call goes through
+                        self.state.tool_calls += 1
+
+                        if result.execution_time_s < best_run.execution_time_s:
+                            best_run = result
+
+                    except json.JSONDecodeError as e:
+
+                        result = RawExperimentResult(
+                            output= "",
+                            error= str(e),
+                            errorcode= "invalid_tool_arguments",
+                            args= arguments,
+                            execution_time_s= sys.float_info.max
+                        )
+                        self.state.errors += 1
+
+                    except ValueError as e:
+
+                        result = RawExperimentResult(
+                            output= "",
+                            error= str(e),
+                            errorcode= "invalid_tool_request",
+                            args= arguments,
+                            execution_time_s= sys.float_info.max
+                        )
+                        self.state.errors += 1
+
+                    except Exception as e:
+
+                        result = RawExperimentResult(
+                            output= "",
+                            error= str(e),
+                            errorcode= "tool_execution_failed",
+                            args= arguments,
+                            execution_time_s= sys.float_info.max
+                        )
+                        self.state.errors += 1
+
+                    # Add the output of the tool call to the context
+                    self.state.messages.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": item.call_id,
+                            "output": json.dumps(dataclasses.asdict(result)),
+                        }
                     )
-
-                    result = self._execute_tool(
-                        tool_call.function.name,
-                        arguments,
+                    self.state.messages.append(
+                        {
+                            "role": "user",
+                            "content": f"the current best run is: \n {json.dumps(dataclasses.asdict(best_run))}"
+                        }
                     )
-                    # Deliberately considers a tool call only if the call goes through
-                    self.state.tool_calls += 1
-
-                    if result.execution_time_s < best_run.execution_time_s:
-                        best_run = result
-
-                except json.JSONDecodeError as e:
-
-                    result = RawExperimentResult(
-                        output= "",
-                        error= str(e),
-                        errorcode= "invalid_tool_arguments",
-                        args= arguments,
-                        execution_time_s= sys.float_info.max
-                    )
-                    self.state.errors += 1
-
-                except ValueError as e:
-
-                    result = RawExperimentResult(
-                        output= "",
-                        error= str(e),
-                        errorcode= "invalid_tool_request",
-                        args= arguments,
-                        execution_time_s= sys.float_info.max
-                    )
-                    self.state.errors += 1
-
-                except Exception as e:
-
-                    result = RawExperimentResult(
-                        output= "",
-                        error= str(e),
-                        errorcode= "tool_execution_failed",
-                        args= arguments,
-                        execution_time_s= sys.float_info.max
-                    )
-                    self.state.errors += 1
-
-                # Add the output of the tool call to the context
-                self.state.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(dataclasses.asdict(result)),
-                    }
-                )
-                self.state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": f"the current best run is: \n {json.dumps(dataclasses.asdict(best_run))}"
-                    }
-                )
-                self.observer.write_event(AgentEvent(
-                    timestamp = time.time_ns(),
-                    iteration=self.state.iteration,
-                    event="tool call",
-                    message=json.dumps(dataclasses.asdict(result)),
-                    tool_calls=self.state.tool_calls,
-                    errors=self.state.errors,
-                    tool=tool_name,
-                    arguments=tool_call.function.arguments,
-                    current_best_run=dataclasses.asdict(best_run),
-                ))
-
+                    self.observer.write_event(AgentEvent(
+                        timestamp = time.time_ns(),
+                        iteration=self.state.iteration,
+                        event="tool call",
+                        message=json.dumps(dataclasses.asdict(result)),
+                        tool_calls=self.state.tool_calls,
+                        errors=self.state.errors,
+                        tool=tool_name,
+                        arguments=item.arguments,
+                        current_best_run=dataclasses.asdict(best_run),
+                    ))
+            if not tool_called:
+                # No tool call needed anymore -> final answer reached
+                if not response.tools:
+                    self.observer.write_event(AgentEvent(
+                        timestamp = time.time_ns(),
+                        iteration=self.state.iteration,
+                        event="Final answer",
+                        message=message,
+                        tool_calls=self.state.tool_calls,
+                        errors=self.state.errors,
+                    ))
+                    return message
                 
 
     def _execute_tool(self, name: str, arguments: dict):
