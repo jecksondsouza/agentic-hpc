@@ -16,9 +16,15 @@ MAX_TOOL_CALLS = 20
 
 class Agent:
 
-    def __init__(self, client: OpenAI, benchmark_path: str, docker_image: str):
+    def __init__(self, client: OpenAI, benchmark_path: str, docker_image: str,
+                 model: str = "my_llm",
+                 max_iterations: int = MAX_ITERATIONS,
+                 max_tool_calls: int = MAX_TOOL_CALLS):
         self.state = AgentState()
         self.client = client
+        self.model = model
+        self.max_iterations = max_iterations
+        self.max_tool_calls = max_tool_calls
         self.observer = Observer()
         self.hardware_profile = HardwareProfile()
 
@@ -72,7 +78,7 @@ class Agent:
                     {
                         "role": "user",
                         "content": (
-                            f"You can still try to run more experiments. You still have {MAX_ITERATIONS-self.state.iteration} iterations and {MAX_TOOL_CALLS-self.state.tool_calls} tool calls."
+                            f"You can still try to run more experiments. You still have {self.max_iterations-self.state.iteration} iterations and {self.max_tool_calls-self.state.tool_calls} tool calls."
                             ##### The line bellow is useful if you want the agent to decide to stop early. If a smart LLM is used, this can be useful to reduce the amount of tries and it could possibly lead to quickly finding the best solution for well known applications.
                             # "However, if you are certain you have reached the final solution, you can stop now by not calling any tools."
                             ##### The line bellow is useful if you want the agent to try something closer to a heuristic search. It might be necessary if running applications that the agent could not know about (e.g., not well-known benchmarks)
@@ -86,7 +92,7 @@ class Agent:
             self.state.iteration += 1
 
             response = self.client.responses.create(
-                model="my_llm",
+                model=self.model,
                 instructions=system_prompt,
                 input=self.state.messages,
                 tools=tools_list,
@@ -234,7 +240,7 @@ class Agent:
         )
 
     def _reached_limits(self) -> bool:
-        if self.state.tool_calls >= MAX_TOOL_CALLS:
+        if self.state.tool_calls >= self.max_tool_calls:
             self.observer.write_event(AgentEvent(
                     timestamp = time.time_ns(),
                     iteration=self.state.iteration,
@@ -245,7 +251,7 @@ class Agent:
                 ))
             return True
 
-        if self.state.iteration >= MAX_ITERATIONS:
+        if self.state.iteration >= self.max_iterations:
             self.state.errors += 1
             self.observer.write_event(AgentEvent(
                     timestamp = time.time_ns(),

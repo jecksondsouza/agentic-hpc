@@ -38,4 +38,11 @@ class RawExperimentResult():
     
     args: RunExperimentArgs
     execution_time_s: float # In seconds with ms precision
-    
+
+class Config(BaseModel):
+    base_url: str = "http://localhost:8080/v1"
+    api_key: str = "not-needed"
+    model: str = "my_llm"
+    max_iterations: int = 10
+    max_tool_calls: int = 20
+# when adding new fields to the config, make sure to also add it in CONFIG_FIELDS, in main.py so that the configuration command can work correctly    

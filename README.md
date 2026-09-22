@@ -130,7 +130,39 @@ docker build -t my_docker_image_name .
 python3 src/agentic_hpc/main.py --benchmark-path <benchmark_path>/<benchmark_name> --docker-image my_docker_image_name
 ```
 
-The script expects an OpenAI server running at http://localhost:8080/v1. It is recommended to use a LLM with high reasoning capabilities.
+It is recommended to use a LLM with high reasoning capabilities.
+
+### Configuration
+
+The connection parameters (server URL, API key, model) and the iteration limits have hardcoded default parameters, but they can also be loaded from a YAML config file with the following format:
+
+```yaml
+base_url: string
+api_key: string
+model: string
+max_iterations: int
+max_tool_calls: int
+```
+
+The config file is looked up in the following order:
+
+1. The path given in `--config <path>` (the file must exist)
+2. `./config.yaml` in the current working directory (a sample is shipped in the project root)
+3. `~/.config/agentic-hpc/config.yaml` (per-user global config)
+
+If no config file is found, the defaults above are used. All fields are optional; omitted fields keep their default values.
+
+You can also generate your user config file (`~/.config/agentic-hpc/config.yaml`) interactively:
+
+```
+python3 src/agentic_hpc/main.py configure
+```
+
+You are asked for each parameter with its current value shown in brackets - just press ENTER to accept it, or type a new value. If a config file already exists, its values are used as the suggestions; otherwise the defaults are offered. For workflows with multiple configurations, you can create your own `config.yaml` directly and pass it with `--config`:
+
+```
+python3 src/agentic_hpc/main.py --config my_config.yaml --benchmark-path ... --docker-image ...
+```
 
 ## Analyze the result
 

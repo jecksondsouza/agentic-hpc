@@ -1,6 +1,6 @@
 # Roadmap
 
-- Create a config file for setting up LLM and API
+- ~~Create a config file for setting up LLM and API~~ - DONE
 - New parameters for optimization (scheduling, deployment, numa nodes) 
 - New non-functional requirements for optimization (energy, cost)
 - Use perf instead of time for capturing more detailed information (cache misses, branch misses...)
