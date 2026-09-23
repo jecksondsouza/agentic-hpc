@@ -6,7 +6,7 @@ import time
 import sys
 
 # Internal modules
-from tools import tools_list, tools_registry, run_experiment
+from tools import tools_list, tools_registry, run_experiment, RepeatedExperimentError
 from schemas import AgentState, AgentEvent, RawExperimentResult
 from observer import Observer
 from hardware_profile import HardwareProfile
@@ -27,6 +27,7 @@ class Agent:
         self.max_tool_calls = max_tool_calls
         self.observer = Observer()
         self.hardware_profile = HardwareProfile()
+        self.executed_experiments: dict[str, int] = {}
 
         self.benchmark_path = benchmark_path
         self.docker_image = docker_image
@@ -36,6 +37,7 @@ class Agent:
         self.observer.write_hardware_profile(self.hardware_profile)
 
         baseline_result = run_experiment(self.benchmark_path, self.docker_image, [0], 1)
+        self.executed_experiments[self._experiment_signature("run_experiment", {"cpus": [0], "num_threads": 1})] = 0
 
         best_run = baseline_result
 
@@ -46,7 +48,7 @@ class Agent:
                     "Be concise and technically precise."
                     "Always provide your reasoning at each response."
                     "Use tools when necessary."
-                    "Never repeat an experiment with same arguments that you have already run before, even if the arguments caused an error in the tool execution."
+                    "Never repeat an experiment with same arguments that you have already run before, even if the arguments caused an error in the tool execution. Repeated experiments are rejected automatically and do not count against your tool call budget."
                     "Keep running new experiments until you are told that you must stop and conclude your thoughts."                               
                     )
         
@@ -165,6 +167,17 @@ class Agent:
                         )
                         self.state.errors += 1
 
+                    except RepeatedExperimentError as e:
+
+                        result = RawExperimentResult(
+                            output= "",
+                            error= str(e),
+                            errorcode= "repeated_experiment",
+                            args= arguments,
+                            execution_time_s= sys.float_info.max
+                        )
+                        self.state.errors += 1
+
                     except Exception as e:
 
                         result = RawExperimentResult(
@@ -215,6 +228,14 @@ class Agent:
                     return message
                 
 
+    def _experiment_signature(self, name: str, arguments: dict) -> str:
+        """Order-independent signature of a tool call's arguments."""
+        if name == "run_experiment":
+            cpus = ",".join(str(c) for c in sorted(set(arguments.get("cpus") or [])))
+            threads = arguments.get("num_threads") or 0
+            return f"run_experiment|cpus={cpus}|threads={threads}"
+        return f"{name}|{json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
+
     def _execute_tool(self, name: str, arguments: dict):
 
         tool = tools_registry[name]
@@ -230,6 +251,15 @@ class Agent:
         validated = tool.args_schema.model_validate(arguments)
 
         arguments = validated.model_dump()
+        signature = self._experiment_signature(name, arguments)
+
+        if signature in self.executed_experiments:
+            first = self.executed_experiments[signature]
+            raise RepeatedExperimentError(
+                f"Experiment with identical arguments was already run at iteration {first} ({signature}). "
+                "Choose different arguments."
+            )
+        self.executed_experiments[signature] = self.state.iteration
 
         if name == "run_experiment":
             arguments["benchmark_path"] = self.benchmark_path

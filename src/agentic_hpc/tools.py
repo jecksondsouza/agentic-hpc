@@ -1,6 +1,8 @@
 import subprocess
 
 from schemas import RawExperimentResult, RunExperimentArgs, Tool
+class RepeatedExperimentError(Exception):
+    """Raised when a tool call duplicates an experiment that was already run."""
 
 
 tools_list = [
