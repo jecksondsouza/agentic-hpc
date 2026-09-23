@@ -1,0 +1,12 @@
+# agentic-hpc example configuration
+#
+# All fields are optional - omitted fields fall back to the defaults below.
+# Pass an alternate file with --config <path>.
+# Lookup order without --config: ./config.yaml, then ~/.config/agentic-hpc/config.yaml
+
+# Uncomment bellow parameters to use the configuration
+# base_url: http://localhost:8080/v1   # URL of your OpenAI-compatible server
+# api_key: not-needed                   # API key (may be anything if not needed by your server)
+# model: my_llm                         # Model name to use (recommend a high-reasoning model)
+# max_iterations: 10                    # Maximum LLM reasoning iterations
+# max_tool_calls: 20                    # Maximum number of experiment runs
