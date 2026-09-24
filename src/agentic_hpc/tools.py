@@ -1,9 +1,6 @@
 import subprocess
 
 from schemas import RawExperimentResult, RunExperimentArgs, Tool
-class RepeatedExperimentError(Exception):
-    """Raised when a tool call duplicates an experiment that was already run."""
-
 
 tools_list = [
     {
@@ -18,8 +15,10 @@ tools_list = [
                     "type": "array",
                     "items": {"type": "integer"},
                     "description": "List of cpus that should be used to run the benchmark. "
-                                    "A subset of cpus can be send by sending a subset list of the cpu range." 
-                                    "For instance, sending [0,1,2,3] will use only cpus 0, 1, 2 and 3 to run the experiment."
+                                    "A subset of cpus can be send by sending a subset list of the cpu range. "
+                                    "For instance, sending [0,1,2,3] will use only cpus 0, 1, 2 and 3 to run the experiment. "
+                                    "Only cpus that exist on the platform (see the hardware profile) are accepted; "
+                                    "a call requesting non-existent cpus is rejected without running."
                 },
                 "num_threads": {
                     "type": "integer",

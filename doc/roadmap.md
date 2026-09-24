@@ -6,4 +6,4 @@
 - Use perf instead of time for capturing more detailed information (cache misses, branch misses...)
 - ~~Move from chat completion to responses API~~ - DONE
 - ~~Refuse to run repeated experiments deterministically (sometimes the LLM will insist on repeating)~~ - DONE
-- Further validate tool usage (e.g., check that resources exist - num_cpus <= actual number of cpus)
+- ~~Further validate tool usage (e.g., check that resources exist - num_cpus <= actual number of cpus)~~ - DONE
