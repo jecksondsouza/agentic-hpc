@@ -11,6 +11,7 @@ agentic-hpc is split in components that can be adapted to different goals (e.g.,
 - **Agent**: Core orchestrator that manages state, runs the LLM loop, and calls tools.
 - **Tools**: Collection of callable functions (e.g., `run_experiment`) exposed to the LLM.
 - **HardwareProfile**: Gathers platform information from `/sys/devices/system/cpu` and presents a JSON‑serialisable dict.
+- **Validation**: Validates tool-call arguments against the hardware profile (e.g., that the requested CPUs exist) and rejects duplicated experiments, before any experiment is executed.
 - **Observer**: Records all state changes and writes a trace file in `traces/`.
 - **Schemas**: Pydantic and dataclass models for state, events, tool arguments and results.
 
@@ -20,6 +21,7 @@ agentic-hpc is split in components that can be adapted to different goals (e.g.,
 component Agent as ag
 component Tools as tl
 component HardwareProfile as hwp
+component Validation as val
 component Observer as obs
 component Schemas as sc
 interface Cli
@@ -27,11 +29,13 @@ interface Cli
 Cli <.. ag: provides
 ag -> tl: calls
 ag -> hwp: loads
+ag -> val: validates
 ag -> obs: calls
 ag -> sc: loads
 
 tl -> sc
 hwp -> sc
+val -> hwp
 obs -> sc
 
 
@@ -39,7 +43,7 @@ obs -> sc
 -->
 ![Components diagram](doc/imgs/components.png "Components diagram")
 
-The diagram displays the interactions between the Agent, Tools, HardwareProfile, Observer and Schemas components, highlighting data flow and dependencies.
+The diagram displays the interactions between the Agent, Tools, HardwareProfile, Validation, Observer and Schemas components, highlighting data flow and dependencies.
 
 ### Agentic flow
 
@@ -51,6 +55,7 @@ The diagram displays the interactions between the Agent, Tools, HardwareProfile,
 Actor User as us
 Participant Agent as ag
 Participant HardwareProfile as hwp
+Participant Validation as val
 Participant Tools as tl
 Participant Observer as obs
 Database TraceFile as trace
@@ -63,10 +68,16 @@ ag -> hwp: Get platform details
 activate hwp
 hwp -> ag: HwProfile JSON
 deactivate hwp
+ag -> val: Create validator with HwProfile
 ag -> obs: Trace hw profile
 activate obs
 obs -> trace: Write on trace file
 deactivate obs
+ag -> val: Validate baseline arguments
+activate val
+val -> val: Check hardware compatibility
+val -> ag: Accepted
+deactivate val
 ag -> tl: Run baseline configuration
 activate tl
 tl -> tl: Run experiment on shell
@@ -75,18 +86,26 @@ deactivate tl
 ag -> ag: best_result = baseline
 == agentic loop ==
 loop Agent concluded OR MAX_ITERATIONS OR MAX_TOOL_CALLS
+  ag -> ag: Increment iterations
   ag -> llm: Reasons over best_result, HwProfile and previous context
   activate llm
   llm -> ag: Request for tool call (run_experiment) with a decided set of arguments
   deactivate llm
-  ag -> tl: run_experiment(arguments)
-  activate tl
-  tl -> ag: Structured JSON results
-  deactivate tl
-  alt result < best_result
-    ag -> ag: best_result = result
-  end
-  ag -> ag: Increment iterations and tool calls
+  ag -> val: Validate arguments
+  activate val
+  val -> val: Check hardware compatibility and duplicates
+  val -> ag: Accept or raise error
+  deactivate val
+  alt Arguments accepted
+    ag -> tl: run_experiment(arguments)
+    activate tl
+    tl -> ag: Structured JSON results
+    deactivate tl
+    alt result < best_result
+      ag -> ag: best_result = result
+    end
+    ag -> ag: Increment tool calls
+  end  
   ag -> ag: Update state
   ag -> obs: Log state
   activate obs
@@ -103,7 +122,7 @@ deactivate llm
 
 ![Sequence diagram](doc/imgs/sequence_diagram.png "Sequence diagram")
 
-The diagram illustrates the LLM‑driven agent loop: initialization, baseline run, iterative reasoning, tool calls, and final report generation.
+The diagram illustrates the LLM‑driven agent loop: initialization, baseline run, iterative reasoning, argument validation, tool calls, and final report generation.
 
 ## How to run
 
